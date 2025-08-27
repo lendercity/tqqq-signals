@@ -26,3 +26,82 @@ jobs:
       env:
         GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
       run: python tqqq_retrain.py
+      # tqqq_retrain.py (extended with backtest)
+import yfinance as yf, pandas as pd, numpy as np, joblib, os, json
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# Google Sheets Auth
+scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
+creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+client = gspread.authorize(creds)
+sheet = client.open("TQQQ Signals")
+
+# --- 1. Load Data ---
+data = yf.download("TQQQ", period="5y", interval="1d")
+data['Return'] = data['Close'].pct_change()
+
+# Features
+data['SMA10'] = data['Close'].rolling(10).mean()
+data['SMA20'] = data['Close'].rolling(20).mean()
+data['EMA10'] = data['Close'].ewm(span=10).mean()
+data['EMA20'] = data['Close'].ewm(span=20).mean()
+data['Momentum'] = data['Close'] - data['Close'].shift(5)
+data['Volatility'] = data['Close'].rolling(10).std()
+data['EMA12'] = data['Close'].ewm(span=12).mean()
+data['EMA26'] = data['Close'].ewm(span=26).mean()
+data['MACD'] = data['EMA12'] - data['EMA26']
+data['Signal_line'] = data['MACD'].ewm(span=9).mean()
+data['RSI'] = 100 - (100/(1+(data['Close'].diff().clip(lower=0).rolling(14).mean() /
+                            data['Close'].diff().clip(upper=0).abs().rolling(14).mean())))
+
+data.dropna(inplace=True)
+data['Target'] = (data['Return'].shift(-1) > 0).astype(int)
+
+features = ['SMA10','SMA20','EMA10','EMA20','Momentum','Volatility','MACD','Signal_line','RSI']
+X, y = data[features], data['Target']
+
+# --- 2. Train Model ---
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+model = RandomForestClassifier(n_estimators=300, max_depth=5, random_state=42)
+model.fit(X_scaled, y)
+
+# Save artifacts
+joblib.dump(scaler, "tqqq_scaler.pkl")
+joblib.dump(model, "tqqq_model.pkl")
+
+# --- 3. Backtest ---
+data["Pred"] = model.predict(X_scaled)
+data["Strategy"] = data["Pred"].shift(1) * data["Return"]  # enter at next day's open
+data["Equity"] = (1 + data["Strategy"]).cumprod()
+
+# Performance metrics
+accuracy = (data["Pred"] == data["Target"]).mean()
+cagr = (data["Equity"].iloc[-1])**(252/len(data)) - 1
+sharpe = (data["Strategy"].mean() / data["Strategy"].std()) * np.sqrt(252)
+max_drawdown = ((data["Equity"].cummax() - data["Equity"]) / data["Equity"].cummax()).max()
+
+report = [
+    str(pd.Timestamp.today().date()),
+    round(accuracy, 3),
+    round(cagr, 3),
+    round(sharpe, 2),
+    round(max_drawdown, 3),
+    round(data["Equity"].iloc[-1], 2)
+]
+
+# --- 4. Push to Google Sheet ---
+try:
+    backtest_tab = sheet.worksheet("Backtest")
+except:
+    backtest_tab = sheet.add_worksheet(title="Backtest", rows="1000", cols="10")
+    backtest_tab.append_row(["Date","Accuracy","CAGR","Sharpe","MaxDD","FinalEquity"])
+
+backtest_tab.append_row(report)
+
+print("✅ Model retrained + backtest logged.")
+
