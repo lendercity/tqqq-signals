@@ -25,6 +25,31 @@ jobs:
 
       - name: Run trading signal
         run: python tqqq_signal.py
+import os
+import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+def save_to_sheets(signal_text, prob, position_size):
+    creds_json = os.getenv("GOOGLE_CREDENTIALS")
+    if not creds_json:
+        print("❌ No Google credentials found in environment.")
+        return
+
+    creds_dict = json.loads(creds_json)
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+
+    # Replace with your Google Sheet name
+    sheet = client.open("TQQQ Signals").sheet1
+
+    # Append today’s signal
+    sheet.append_row([str(data.index[-1].date()), signal_text, f"{prob:.2f}", f"{position_size:.2f}"])
+
+# Save results
+save_to_sheets(signal_text, prob, position_size)
+
 
 
   
