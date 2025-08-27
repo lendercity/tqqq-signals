@@ -1,6 +1,6 @@
 name: Daily TQQQ Signal
 
- on:
+ on
   schedule:
     - cron: "30 13 * * 1-5"   # Daily 9:30 AM EST (Mon-Fri) -> signals
     - cron: "0 19 * * 0"      # Sunday 2:00 PM EST -> retrain model
