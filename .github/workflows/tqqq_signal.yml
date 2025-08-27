@@ -1,9 +1,11 @@
 name: Daily TQQQ Signal
 
-on:
+ on:
   schedule:
-    - cron: "30 13 * * 1-5"   # Run at 9:30 AM EST (13:30 UTC) weekdays
-  workflow_dispatch:           # allows manual run
+    - cron: "30 13 * * 1-5"   # Daily 9:30 AM EST (Mon-Fri) -> signals
+    - cron: "0 19 * * 0"      # Sunday 2:00 PM EST -> retrain model
+  workflow_dispatch:
+
 
 jobs:
   build:
