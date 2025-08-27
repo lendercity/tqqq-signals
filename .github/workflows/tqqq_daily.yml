@@ -8,8 +8,7 @@ on:
 jobs:
   run-daily-signal:
     runs-on: ubuntu-latest
-
-    steps:
+    steps:   # fixed indentation
       - name: Checkout repo
         uses: actions/checkout@v3
 
@@ -26,4 +25,5 @@ jobs:
         run: python tqqq_daily.py
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+
 
